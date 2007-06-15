@@ -1,0 +1,6 @@
+Revision history for Perl extension DBIx::OurPerl.
+
+0.01  Wed Oct 25 15:53:33 2006
+	- original version; created by h2xs 1.23 with options
+		-AX -n DBIx::OurPerl
+
