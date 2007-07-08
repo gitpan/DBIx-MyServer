@@ -288,7 +288,7 @@ while (1) {
 		next;
 	}
 
-	$storage{dbh} = $start_dbh->clone();
+	$storage{dbh} = $start_dbh->clone() if defined $start_dbh;
 	$storage{dsn} = $start_dsn;
 	$storage{args}= \@ARGV;
 	
@@ -432,10 +432,10 @@ while (1) {
 				} elsif (defined $rule->{dsn}) {
 					if (ref($rule->{dsn}) eq 'ARRAY') {
 						print localtime()." [$$] Connecting to DSN $rule->{dsn}->[0].\n" if $debug;
-						$myserver->setDbh(DBI->connect($rule->{dsn}->[0], $rule->{dsn}->[1], $rule->{dsn}->[2]));
+						$myserver->setDbh(DBI->connect(@{$rule->{dsn}}));
 					} else {
 						print localtime()." [$$] Connecting to DSN $rule->{dsn}.\n" if $debug;
-						$myserver->setDbh(DBI->connect($rule->{dsn}->[0], get('dsn_user'), get('dsn_password')));
+						$myserver->setDbh(DBI->connect($rule->{dsn}, get('dsn_user'), get('dsn_password')));
 					}
 				}
 				if (not defined get('dbh')) {
@@ -484,10 +484,10 @@ sub set {
 			my $dbh;
 			if (ref($value) eq 'ARRAY') {
 				print localtime()." [$$] Connecting to DSN $value->[0].\n" if $debug;
-				$dbh = DBI->connect($value->[0], $value->[1], $value->[2]);
+				$dbh = DBI->connect(@{$value});
 			} else {
 				print localtime()." [$$] Connecting to DSN $value.\n" if $debug;
-				$dbh = DBI->connect($value->[0], get('dsn_user'), get('dsn_password'));
+				$dbh = DBI->connect($value, get('dsn_user'), get('dsn_password'));
 			}
 			$storage{myserver}->setDbh($dbh);
 			$storage{dbh} = $dbh;

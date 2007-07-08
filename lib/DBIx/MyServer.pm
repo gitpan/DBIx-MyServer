@@ -7,7 +7,7 @@ use Carp qw(cluck carp croak);
 
 use Digest::SHA1;
 
-our $VERSION = '0.40';
+our $VERSION = '0.41';
 
 use constant MYSERVER_PACKET_COUNT	=> 0;
 use constant MYSERVER_SOCKET		=> 1;
