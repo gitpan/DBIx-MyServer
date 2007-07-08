@@ -7,7 +7,7 @@ use Carp qw(cluck carp croak);
 
 use Digest::SHA1;
 
-our $VERSION = '0.20';
+our $VERSION = '0.40';
 
 use constant MYSERVER_PACKET_COUNT	=> 0;
 use constant MYSERVER_SOCKET		=> 1;
@@ -19,6 +19,7 @@ use constant MYSERVER_PARSER		=> 8;
 use constant MYSERVER_BANNER		=> 9;
 use constant MYSERVER_SERVER_CHARSET	=> 10;
 use constant MYSERVER_CLIENT_CHARSET	=> 11;
+use constant MYSERVER_SALT		=> 12;
 
 use constant FIELD_CATALOG		=> 0;
 use constant FIELD_DB			=> 1;
@@ -32,7 +33,6 @@ use constant FIELD_FLAGS		=> 8;
 use constant FIELD_DECIMALS		=> 9;
 use constant FIELD_DEFAULT		=> 10;
 
-use constant MYSERVER_SALT		=> join('',map { chr(int(rand(255))) } (1..20));
 
 #
 # This comes from include/mysql_com.h of the MySQL source
@@ -160,9 +160,12 @@ C<examples/echo.pl> shows how to use this module directly.
 This module emulates the server side of the MySQL protocol. This allows you to run
 your own faux-MySQL servers which can accept commands and queries and reply accordingly.
 
+Please see C<examples/myserver.pl> for a system that allows building functional mysql servers that rewrite queries
+or return arbitary data.
+
 =head1 CONSTRUCTOR
 
-=item C<my $myserver = DBIx::MyServer->new( socket => $socket, parser => $parser, dbh => $dbh ... )>
+=item C<< my $myserver = DBIx::MyServer->new( socket => $socket, parser => $parser, dbh => $dbh ... ) >>
 
 The following parameters are accepted:
 
@@ -201,11 +204,11 @@ to it. From then on, you have two options:
 If you want to handle connection establishment yourself, you will need to call those two functions consequtively.
 Please see C<examples/echo.pl> for a script that uses procedural connection establishment.
 
-=item C<$myserver->sendServerHello()>
+=item C<< $myserver->sendServerHello() >>
 
 The server is the one that initiates the handshake by sending his greeting to the client.
 
-=item C<my ($username, $database) = $myserver->readClientHello()>
+=item C<< my ($username, $database) = $myserver->readClientHello() >>
 
 The client provides his username and the database it wants to connect to. If C<$username> is C<undef>, the client
 disconnected before authenticating. To check the password, use C<$myserver->passwordMatches($correct_password)
@@ -213,21 +216,21 @@ which will return C<1> if the password provided by the client is correct and C<u
 
 If you need to know the IP of the client, you need to extract it from the socket that you established yourself.
 Please check out the implementation of C<DBIx::MyParse::handshake()> for the correct way to call C<getpeername()>.
-The socket being serviced by the current C<DBIx::MyParse> object can be obtained by calling c<getSocket()>.
+The socket being serviced by the current C<DBIx::MyParse> object can be obtained by calling C<getSocket()>.
 
-If you want to let the client in, do a C<$myserver->sendOK()>. Otherwise, use C<$myserver->sendError()> as described below.
+If you want to let the client in, do a C<< $myserver->sendOK() >>. Otherwise, use C<< $myserver->sendError() >> as described below.
 
 =head2 Connection Establishment with Subclassing
 
 If you are subclassing C<DBIx::MyParse>, the way C<DBIx::MyParse::DBI> does, to establish a connection you call:
 
-=item C<$myserver->handshake()>
+=item C<< $myserver->handshake() >>
 
 which completes the handshake between the two parties. The return value will be C<undef> if some I/O error
 occured, or the result of the client authorization routine. When the client sends its credentials, the
 module will call:
 
-=item C<$myserver->authorize($remote_host, $username, $database)>
+=item C<< $myserver->authorize($remote_host, $username, $database) >>
 
 whose default action is to accept only localhost connections regardless of username or password. You should
 override this method to install your own security requirements. If your C<authorize()> returns C<undef>, the
@@ -240,7 +243,7 @@ you accept the connection, the module will send the C<OK> message back to the cl
 
 The password supplied by the client is irreversibly encrypted, therefore to verify it, you need to use:
 
-=item C<$myserver->passwordMatches($expected_password)>
+=item C<< $myserver->passwordMatches($expected_password) >>
 
 which will return C<undef> if the password does not match and C<1> otherwise.
 
@@ -254,7 +257,7 @@ For an example of a custom C<authorize()>, please see C<DBIx::MyParse::DBI> whic
 
 If you want to handle each command individually on your own, you need to call 
 
-=item C<<my ($command, $data) = $myserver->readCommand()>>
+=item C<< my ($command, $data) = $myserver->readCommand() >>
 
 in a loop and process each command. Sending result sets and errors and terminating the connection is entirely up to you.
 The C<examples/odbc.pl> script uses this approach to process queries in the simples possible way without reflecting much
@@ -283,7 +286,7 @@ to send a "command unsupported" error back to the client, unless specified other
 If you want to send an error or an OK message to the client as a response to a command or query, you need to use
 C<sendOK()> and C<sendError()> yourself. The parent module will not send any of those for you under no circumstances.
 
-=item C<$myserver->comSleep($data)>
+=item C<< $myserver->comSleep($data) >>
 
 The meaning of this command is not clear.
 
@@ -300,7 +303,7 @@ the default database for the parser object if one has been specified. This enabl
 some SQL statements that require a default database, such as SHOW TABLE STATUS. The command is then converted into a
 C<USE $database> SQL statement which in turn will trigger C<comQuery("USE $database")> or C<sqlcomChangeDB()>
 
-=item C<comQuery($query_text)>
+=item C<< $myserver->comQuery($query_text) >>
 
 This handler is called for all SQL queries received by the server. The action of the default handler is to parse
 the query using L<DBIx::MyParse> and evoke a more specific handler. If the parsing results in an error, C<sqlcomError()>
@@ -319,7 +322,7 @@ The third item you can return is a reference to an array of values that is the a
 response to the query. If you do not provide a reference, you are responsible for sending the data yourself by using the
 functions described elsewhere in this document.
 
-=item C<comFieldList($table)>
+=item C<< $myserver->comFieldList($table) >>
 
 This handler is called if the mysql client requests the field list for the specified table. The handler must create a
 set of field definitions using C<newDefinition()> and then send them to the client using
@@ -349,9 +352,9 @@ any authorized client can shut down its own child, or the entire server, if the 
 
 =item C<< $myserver->comStatistics() >>
 
-The default action is to send our PID to the client. If you want to override that, you can use C<_sendPacket()>
-(rather than C<_sendOK()>) to deliver a single string to your client. Please note that C<mysql> and C<mysqladmin>
-may attempt to parse this string before displaying it, so you may wish to keep to the one sent by real MySQL servers:
+The default action is to send our PID to the client. If you want to override that, you can use C<_sendPacket($string)>
+(rather than C<sendOK()>) to deliver a single string to your client. Please note that C<mysql> and C<mysqladmin>
+may attempt to parse this string before displaying it, so you may wish to keep it identical to the one sent by real MySQL servers:
 
 C<Uptime: 10659  Threads: 1  Questions: 756  Slow queries: 0  Opens: 109  Flush tables: 1  Open tables: 30  Queries per second avg: 0.071>
 
@@ -361,10 +364,11 @@ This handler is called when C<mysqladmin processlist> is called from the command
 
 =item C<< $myserver->comProcessKill($thread_id) >>
 
-This handler is called by C<< mysqladmin kill >>. In C<DBIx::MyServer>, the MySQL thread ID is equal to the PID of the
-server process. The default action will L<kill()> the PID however only if you are trying to kill your own PID.
+This handler is called as a response by the command issued by C<< mysqladmin kill >>. In C<DBIx::MyServer>,
+the MySQL thread ID is equal to the PID of the server process. The default action will L<kill()> the PID however
+you are only allowed to kill your own PID.
 
-=item C< $myserver->comPing() >
+=item C<< $myserver->comPing() >>
 
 This is used to check if the server is reachable and running. The default action is to do a C<sendOK()>. If you are using
 that in a conjunction with an automated monitoring and alert system, you may wish to do a C<sendOK()> only after doing
@@ -389,17 +393,17 @@ is to send the parser error message as is to the client.
 
 =head1 RETURNING MESSAGES TO CLIENT
 
-=item C<<$myserver->sendOK($message, $affected_rows, $insert_id, $warning_count)>>
+=item C<< $myserver->sendOK($message, $affected_rows, $insert_id, $warning_count) >>
 
 Returns a simple OK response, which can contain a custom message, the number of rows affected by the query, etc.
 
-=item C<<$myserver->sendError($message, $errno, $sqlstate)>>
+=item C<< $myserver->sendError($message, $errno, $sqlstate) >>
 
 Returns an error response. IF no C<errno> and C<sqlstate> are specified, generic values will be sent to client.
 
 =head1 RETURNING DATA TO CLIENT
 
-=item C<<my $definition = $myserver->newDefinition( name => 'field_name' )>>
+=item C<< my $definition = $myserver->newDefinition(name => 'field_name') >>
 
 Prepares a new field definition that can then be sent to the client. Apart from C<name>, the following attributes are
 supported:
@@ -408,9 +412,9 @@ supported:
 	name, org_name, length, type,
 	flags, decimals, default
 
-The default <type> is C<MYSQL_TYPE_STRING>. The complete list of type constants is available from C<MyServer.pm>.
+The default C<type> is C<MYSQL_TYPE_STRING>. The complete list of type constants is available from C<MyServer.pm>.
 
-=item C<<$myserver->sendDefinitions( \@definitions, $skip_envelope ) >>
+=item C<< $myserver->sendDefinitions( \@definitions, $skip_envelope ) >>
 
 Sends the previously prepared field definitions to the client. You need to do that before sending the first data row.
 You also need to use C<sendDefinitions()> to send a table definition in response to C<comFieldList()> command,
@@ -486,6 +490,8 @@ sub new {
 
 	$myserver->[MYSERVER_PACKET_COUNT] = 0;
 	$myserver->[MYSERVER_THREAD_ID] = $$;
+	$myserver->[MYSERVER_SALT] = join('',map { chr(int(rand(255))) } (1..20));
+
 	return $myserver;
 }
 
@@ -497,6 +503,10 @@ sub getSocket {
 sub getDbh {
 	my $myserver = shift;
 	return $myserver->[MYSERVER_DBH];
+}
+
+sub setDbh {
+	$_[0]->[MYSERVER_DBH] = $_[1];
 }
 
 sub getParser {
@@ -756,7 +766,7 @@ sub sendServerHello {
 
 	$payload .= pack('V', $myserver->[MYSERVER_THREAD_ID]);
 
-	$payload .= substr(MYSERVER_SALT,0,8)."\0";
+	$payload .= substr($myserver->[MYSERVER_SALT],0,8)."\0";
 
 	# Server capabilities
 	$payload .= pack('v', CLIENT_LONG_PASSWORD | CLIENT_CONNECT_WITH_DB | CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
@@ -768,7 +778,7 @@ sub sendServerHello {
 
 	$payload .= "\0" x 13;				# Unused space
 
-	$payload .= substr(MYSERVER_SALT,8)."\0";
+	$payload .= substr($myserver->[MYSERVER_SALT],8)."\0";
 	
 	return $myserver->_sendPacket($payload);
 }
@@ -1306,7 +1316,7 @@ sub passwordMatches {
 	my $stage2 = $ctx->digest;
 
 	$ctx->reset;
-	$ctx->add(MYSERVER_SALT);
+	$ctx->add($myserver->[MYSERVER_SALT]);
 	$ctx->add($stage2);
 	my $result = $ctx->digest;
 

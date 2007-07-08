@@ -37,3 +37,12 @@ This library is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public Licence
 
 
+COMPATIBILITY
+
+The following applications are known to be compatible with myserver.pl and odbc.conf
+
+* Microsoft Excel 2002 on a Windows 2000 with MyODBC 3.51 (Import External Data)
+
+* Microsoft Access 2002 - Import only, no linking
+
+* Open Office 2.2.1 with the ODBC driver

@@ -6,7 +6,7 @@ use strict;
 use DBI;
 use DBIx::MyServer;
 
-use constant MYSERVER_SQLTYPES => 20;
+use constant MYSERVER_SQLTYPES => 30;
 
 #
 # During handshake, we may still issue SQL commands however we do not send the responses back to the client
@@ -24,33 +24,30 @@ sub comQuery {
 
 	my $sth = $dbh->prepare($query_text);
 
-	if (not defined $sth) {
-		return $myserver->sendError($dbh->errstr(), $dbh->err(), $dbh->state());
-	}
+	return $myserver->sendErrorFromDBI($dbh) if not defined $sth;
 
 	my $affected_rows = $sth->execute();
 	$affected_rows = 0 if defined $affected_rows && $affected_rows eq '0E0';
 	my $err = $sth->err();
 	if (defined $err) {
-		my $send_result = $myserver->sendError($sth->errstr(), $sth->err(), $sth->state());
+		my $send_result = $myserver->sendErrorFromDBI($sth);
 		return (defined $send_result) ? $query_text : undef;
 	} elsif ((not defined $sth->{NUM_OF_FIELDS}) || ($sth->{NUM_OF_FIELDS} == 0)) {
 		my $send_result = (not $in_handshake) ? $myserver->sendOK($dbh->{'mysql_info'}, $affected_rows, $sth->{mysql_insertid}, $sth->{'mysql_warning_count'}) : 1;
 		return (defined $send_result) ? $query_text : undef;
 	} else {
 		my @definitions = map {
-			my $len = $sth->{SCALE}->[$_];
 			my $flags = 0;
 			$flags = $flags | DBIx::MyServer::NOT_NULL_FLAG if not $sth->{NULLABLE}->[$_];
-			$flags = $flags | DBIx::MyServer::BLOB_FLAG if $sth->{mysql_is_blob};
-			$flags = $flags | DBIx::MyServer::UNIQUE_KEY_FLAG if $sth->{mysql_is_key};
-			$flags = $flags | DBIx::MyServer::PRI_KEY_FLAG if $sth->{mysql_is_pri_key};
-			$flags = $flags | DBIx::MyServer::AUTO_INCREMENT_FLAG if $sth->{mysql_is_auto_increment};
+			$flags = $flags | DBIx::MyServer::BLOB_FLAG if $sth->{mysql_is_blob}->[$_];
+			$flags = $flags | DBIx::MyServer::UNIQUE_KEY_FLAG if $sth->{mysql_is_key}->[$_];
+			$flags = $flags | DBIx::MyServer::PRI_KEY_FLAG if $sth->{mysql_is_pri_key}->[$_];
+			$flags = $flags | DBIx::MyServer::AUTO_INCREMENT_FLAG if $sth->{mysql_is_auto_increment}->[$_];
 
 			$myserver->newDefinition(
 				name => $sth->{NAME}->[$_],
-				type => $myserver->[MYSERVER_SQLTYPES]->{$sth->{TYPE}->[$_]},
-				length => $sth->{SCALE}->[$_],
+				type => $myserver->getSQLType($sth->{TYPE}->[$_]),
+				length => $sth->{mysql_length}->[$_],
 				flags => $flags
 			);
 		} (0..$sth->{NUM_OF_FIELDS}-1);
@@ -72,8 +69,8 @@ sub comFieldList {
 	my $dbh = $myserver->[DBIx::MyServer::MYSERVER_DBH];
 	my $sth = $dbh->column_info(undef, undef, $table_name, '%');
 
-	return $myserver->sendError($dbh->errstr(), $dbh->err(),$dbh->state()) if not defined $sth;
-	return $myserver->sendError($sth->errstr(), $sth->err(),$sth->state()) if $sth->err();
+	return $myserver->sendErrorFromDBI($dbh) if not defined $sth;
+	return $myserver->sendErrorFromDBI($sth) if $sth->err();
 
 	my @definitions;
 	while (my $hash_ref = $sth->fetchrow_hashref()) {
@@ -85,7 +82,7 @@ sub comFieldList {
 			name => $hash_ref->{COLUMN_NAME},
 			org_name => $hash_ref->{COLUMN_NAME},
 			length => $hash_ref->{COLUMN_SIZE},
-			type => $myserver->[MYSERVER_SQLTYPES]->{$hash_ref->{DATA_TYPE}},
+			type => $myserver->getSQLType($hash_ref->{DATA_TYPE}),
 			decimals => $hash_ref->{DECIMAL_DIGITS},
 			default => $hash_ref->{COLUMN_DEF}
 		);
@@ -125,20 +122,43 @@ sub new {
 
 	my $dbh = $myserver->getDbh();
 
-	my @type_info = @{$dbh->type_info_all()};
-
-	my $sql_col = $type_info[0]->{DATA_TYPE};
-	my $mysql_col = $type_info[0]->{mysql_native_type};
-
-	foreach my $type (@type_info[1..$#type_info]) {
-		my $sql_value = $type->[$sql_col];
-		my $mysql_value = $type->[$mysql_col];
-
-		# We use hash rather than array here because $sql_value may be negative
-		$myserver->[MYSERVER_SQLTYPES]->{$sql_value} = $mysql_value;
-	}
+	$myserver->setupSQLTypes() if defined $dbh;
 
 	return $myserver;
+}
+
+sub setupSQLTypes {
+	my $myserver = shift;
+	my $dbh = $myserver->getDbh();
+	if (defined $dbh) {
+		my @type_info = @{$dbh->type_info_all()};
+
+		my $sql_col = $type_info[0]->{DATA_TYPE};
+		my $mysql_col = $type_info[0]->{mysql_native_type};
+	
+		foreach my $type (@type_info[1..$#type_info]) {
+			my $sql_value = $type->[$sql_col];
+			my $mysql_value = $type->[$mysql_col];
+	
+			# We use hash rather than array here because $sql_value may be negative
+			$myserver->[MYSERVER_SQLTYPES]->{$sql_value} = $mysql_value;
+		}
+		return 1;
+	} else {
+		return 0;
+	}
+}
+
+sub getSQLType {
+	my ($myserver, $type) = @_;
+	$myserver->setupSQLTypes() if not defined $myserver->[MYSERVER_SQLTYPES];
+	return $myserver->[MYSERVER_SQLTYPES]->{$type};
+}
+
+sub sendErrorFromDBI {
+	my ($myserver, $h) = @_;
+	$myserver->sendError($h->errstr(), $h->err(), $h->state());
+
 }
 
 1;
