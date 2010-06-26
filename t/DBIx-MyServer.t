@@ -33,7 +33,7 @@ unless ($pid = fork()) {
 
 sleep 1;
 
-my $dbh = DBI->connect("dbi:mysql:host=127.0.0.1:port=$port:username=myuser");
+my $dbh = DBI->connect("dbi:mysql:host=127.0.0.1:port=$port:user=myuser:password=myuser");
 my $result = $dbh->selectrow_array("hello");
 ok($result eq 'val1', 'myserver');
 $dbh->disconnect();

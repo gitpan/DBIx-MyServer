@@ -132,10 +132,14 @@ command line. It is not used by C<myserver.pl> however you can use it in your ru
 
 =head1 SECURITY
 
+IMPORTANT NOTICE: THIS SCRIPT IS MEANT FOR DEMONSTRATION PURPOSES ONLY AND SHOULD NOT BE ASSUMED TO BE SECURE BY ANY MEANS!
+
 By default the script will only accept incoming connections from the local host. If you relax that via the C<--interface>
 command-line option, all connections will be accepted. However, once the connection has been established, you can implement
 access control as demonstrated in the first rule of the C<myserver.conf> file -- it returns "Access denied" for every query
 unless the username is "myuser". Future versions of the script will allow connections to be rejected during handshake.
+
+The script expects that the password is equal to the username. This is currently hard-coded.
 
 =head1 SAMPLE RULES
 
@@ -303,6 +307,11 @@ while (1) {
 	$myserver->sendServerHello();
 	my ($username, $database) = $myserver->readClientHello();
 	set('username', $username); set('database', $database);
+
+	if (!$myserver->passwordMatches($username)) {
+		$myserver->sendError("Authorization failed. Password must equal username '$username'.",1044, 28000);
+		exit();
+	}
 
         eval {
 		my $hersockaddr = getpeername($myserver->getSocket());

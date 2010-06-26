@@ -7,7 +7,7 @@ use Carp qw(cluck carp croak);
 
 use Digest::SHA1;
 
-our $VERSION = '0.41';
+our $VERSION = '0.42';
 
 use constant MYSERVER_PACKET_COUNT	=> 0;
 use constant MYSERVER_SOCKET		=> 1;
@@ -490,7 +490,7 @@ sub new {
 
 	$myserver->[MYSERVER_PACKET_COUNT] = 0;
 	$myserver->[MYSERVER_THREAD_ID] = $$;
-	$myserver->[MYSERVER_SALT] = join('',map { chr(int(rand(255))) } (1..20));
+	$myserver->[MYSERVER_SALT] = join('',map { chr(int(33 + rand(94))) } (1..20));
 
 	return $myserver;
 }
@@ -632,7 +632,7 @@ sub _sendDefinition {
 #### $field_length
 #### $field_type
 
-	my $payload = join('', map { $myserver->_lengthCodedString($_) } (
+	my $payload = join('', map { defined $_ ? $myserver->_lengthCodedBinary(length($_)).$_ : chr(0) } (
 		$field_catalog, $field_db, $field_table,
 		$field_org_table, $field_name, $field_org_name
 	));
@@ -771,7 +771,7 @@ sub sendServerHello {
 	# Server capabilities
 	$payload .= pack('v', CLIENT_LONG_PASSWORD | CLIENT_CONNECT_WITH_DB | CLIENT_PROTOCOL_41 | CLIENT_SECURE_CONNECTION);
 	
-	my $charset = defined $myserver->[MYSERVER_SERVER_CHARSET] ? chr($myserver->[MYSERVER_SERVER_CHARSET]) : 0x21; # latin1
+	my $charset = defined $myserver->[MYSERVER_SERVER_CHARSET] ? chr($myserver->[MYSERVER_SERVER_CHARSET]) : chr(0x21); # latin1
 	$payload .= $charset;
 
 	$payload .= pack('v', SERVER_STATUS_AUTOCOMMIT);	# Server status
